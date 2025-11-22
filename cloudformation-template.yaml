@@ -188,15 +188,29 @@ Resources:
           #!/bin/bash
           set -e
 
+          # Log everything to a file for debugging
+          exec > >(tee -a /var/log/userdata.log)
+          exec 2>&1
+
+          echo "========================================="
+          echo "Starting UserData script execution"
+          echo "Timestamp: $(date)"
+          echo "========================================="
+
           # Update system
+          echo "Updating system packages..."
           yum update -y
 
           # Install required packages
-          yum install -y vsftpd aws-cli amazon-cloudwatch-agent
+          echo "Installing required packages..."
+          yum install -y vsftpd aws-cli amazon-cloudwatch-agent firewalld
+          echo "Packages installed successfully"
 
           # Create FTP user
+          echo "Creating FTP user: ${FTPUser}"
           useradd -m -s /bin/bash ${FTPUser}
           echo "${FTPUser}:${FTPPassword}" | chpasswd
+          echo "FTP user created successfully"
 
           # Create FTP directory
           mkdir -p /home/${FTPUser}/ftp/upload
@@ -236,6 +250,15 @@ Resources:
           # Add FTP user to allowed users
           echo "${FTPUser}" > /etc/vsftpd/user_list
 
+          # Configure firewall for FTP
+          echo "Configuring firewall for FTP ports..."
+          systemctl start firewalld
+          systemctl enable firewalld
+          firewall-cmd --permanent --add-port=29720/tcp
+          firewall-cmd --permanent --add-port=21000-21100/tcp
+          firewall-cmd --reload
+          echo "Firewall configured successfully"
+
           # Create CloudWatch agent config
           cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json << 'EOF'
           {
@@ -243,6 +266,11 @@ Resources:
               "logs_collected": {
                 "files": {
                   "collect_list": [
+                    {
+                      "file_path": "/var/log/userdata.log",
+                      "log_group_name": "/aws/ec2/ftp-server",
+                      "log_stream_name": "userdata-{instance_id}"
+                    },
                     {
                       "file_path": "/var/log/vsftpd.log",
                       "log_group_name": "/aws/ec2/ftp-server",
@@ -315,13 +343,29 @@ Resources:
           echo "*/2 * * * * /usr/local/bin/ftp-to-s3.sh" | crontab -
 
           # Start and enable services
+          echo "Starting vsftpd service..."
           systemctl start vsftpd
           systemctl enable vsftpd
+
+          echo "Checking vsftpd status..."
+          systemctl status vsftpd || true
+
+          echo "Starting crond service..."
           systemctl start crond
           systemctl enable crond
 
+          # Verify FTP port is listening
+          echo "Verifying FTP port 29720 is listening..."
+          sleep 5
+          ss -tuln | grep 29720 || echo "WARNING: Port 29720 not listening yet"
+
           # Create ready marker
           echo "FTP_SERVER_READY" > /tmp/ftp-ready
+
+          echo "========================================="
+          echo "UserData script completed successfully"
+          echo "Timestamp: $(date)"
+          echo "========================================="
 
       Tags:
         - Key: Name

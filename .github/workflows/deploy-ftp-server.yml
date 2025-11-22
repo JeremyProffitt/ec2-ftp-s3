@@ -128,6 +128,47 @@ jobs:
           echo "Waiting for instance to complete initialization..."
           sleep 120
 
+      - name: Validate EC2 instance health checks
+        run: |
+          echo "Validating EC2 instance health..."
+          INSTANCE_ID="${{ steps.instance.outputs.instance_id }}"
+
+          # Check instance status checks
+          echo "Checking instance status checks..."
+          MAX_WAIT=600  # 10 minutes
+          ELAPSED=0
+          INTERVAL=15
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            INSTANCE_STATUS=$(aws ec2 describe-instance-status \
+              --instance-ids $INSTANCE_ID \
+              --query "InstanceStatuses[0].InstanceStatus.Status" \
+              --output text 2>&1 || echo "initializing")
+
+            SYSTEM_STATUS=$(aws ec2 describe-instance-status \
+              --instance-ids $INSTANCE_ID \
+              --query "InstanceStatuses[0].SystemStatus.Status" \
+              --output text 2>&1 || echo "initializing")
+
+            echo "Instance status: $INSTANCE_STATUS, System status: $SYSTEM_STATUS (elapsed: ${ELAPSED}s)"
+
+            if [ "$INSTANCE_STATUS" = "ok" ] && [ "$SYSTEM_STATUS" = "ok" ]; then
+              echo "Instance health checks passed!"
+              break
+            fi
+
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "WARNING: Instance health checks did not complete in time, but continuing..."
+          fi
+
+          # Check CloudWatch logs for UserData execution
+          echo "Checking UserData execution logs..."
+          aws logs tail /aws/ec2/ftp-server --since 30m --filter-pattern "userdata" --format short || echo "UserData logs not available yet"
+
       - name: Install FTP client
         run: |
           sudo apt-get update

@@ -228,11 +228,12 @@ Resources:
           xferlog_file=/var/log/vsftpd.log
           xferlog_std_format=YES
           connect_from_port_20=NO
-          listen=YES
+          listen=NO
+          listen_ipv6=NO
           listen_port=29720
           pam_service_name=vsftpd
           userlist_enable=YES
-          tcp_wrappers=YES
+          tcp_wrappers=NO
           pasv_enable=YES
           pasv_min_port=21000
           pasv_max_port=21100
@@ -241,6 +242,7 @@ Resources:
           allow_writeable_chroot=YES
           local_root=/home/$USER/ftp
           user_sub_token=$USER
+          seccomp_sandbox=NO
           EOF
 
           # Get public IP and update config

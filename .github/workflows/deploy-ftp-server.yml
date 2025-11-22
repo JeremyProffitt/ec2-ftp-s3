@@ -1,0 +1,211 @@
+name: Deploy FTP Server to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  STACK_NAME: ftp-server-stack
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload CloudFormation template to S3
+        run: |
+          aws s3 cp cloudformation-template.yaml s3://${{ vars.CLOUDFORMATION_S3_BUCKET }}/cloudformation-template.yaml
+
+      - name: Deploy CloudFormation stack
+        run: |
+          echo "Deploying CloudFormation stack..."
+
+          aws cloudformation deploy \
+            --template-file cloudformation-template.yaml \
+            --stack-name ${{ env.STACK_NAME }} \
+            --parameter-overrides \
+              InstanceType=${{ vars.INSTANCE_TYPE }} \
+              S3BucketName=${{ vars.S3_BUCKET }} \
+              FTPUser=${{ vars.FTP_USER }} \
+              FTPPassword=${{ secrets.FTP_PASSWORD }} \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset
+
+      - name: Get EC2 instance details
+        id: instance
+        run: |
+          INSTANCE_ID=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue" \
+            --output text)
+
+          PUBLIC_IP=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='PublicIP'].OutputValue" \
+            --output text)
+
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+
+          echo "Instance ID: $INSTANCE_ID"
+          echo "Public IP: $PUBLIC_IP"
+
+      - name: Wait for EC2 instance to be running (max 15 minutes)
+        run: |
+          echo "Waiting for EC2 instance to be running..."
+          INSTANCE_ID="${{ steps.instance.outputs.instance_id }}"
+
+          MAX_WAIT=900  # 15 minutes
+          ELAPSED=0
+          INTERVAL=10
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            STATE=$(aws ec2 describe-instances \
+              --instance-ids $INSTANCE_ID \
+              --query "Reservations[0].Instances[0].State.Name" \
+              --output text)
+
+            echo "Current state: $STATE (elapsed: ${ELAPSED}s)"
+
+            if [ "$STATE" = "running" ]; then
+              echo "Instance is running!"
+              break
+            fi
+
+            if [ "$STATE" = "terminated" ] || [ "$STATE" = "stopped" ]; then
+              echo "ERROR: Instance is in state: $STATE"
+              exit 1
+            fi
+
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "ERROR: Timeout waiting for instance to be running"
+            exit 1
+          fi
+
+      - name: Wait for instance initialization (additional time for UserData)
+        run: |
+          echo "Waiting for instance to complete initialization..."
+          sleep 120
+
+      - name: Install FTP client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ftp lftp
+
+      - name: Wait for FTP server to be ready (max 15 minutes)
+        run: |
+          echo "Waiting for FTP server to be ready..."
+          PUBLIC_IP="${{ steps.instance.outputs.public_ip }}"
+
+          MAX_WAIT=900  # 15 minutes
+          ELAPSED=0
+          INTERVAL=15
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            echo "Testing FTP connection (elapsed: ${ELAPSED}s)..."
+
+            # Try to connect using lftp with timeout
+            if timeout 10 lftp -u "${{ vars.FTP_USER }},${{ secrets.FTP_PASSWORD }}" \
+              -e "ls; quit" \
+              -p 29720 $PUBLIC_IP 2>&1 | grep -q "total"; then
+              echo "FTP server is ready and accepting connections!"
+              break
+            fi
+
+            # Alternative test - just check if port is open
+            if nc -z -w 5 $PUBLIC_IP 29720; then
+              echo "FTP port is open, waiting for authentication to work..."
+            else
+              echo "FTP port not yet accessible..."
+            fi
+
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "ERROR: Timeout waiting for FTP server to be ready"
+            echo "Checking CloudWatch logs for debugging..."
+            aws logs tail /aws/ec2/ftp-server --since 30m || true
+            exit 1
+          fi
+
+      - name: Create test file
+        run: |
+          echo "This is a test file uploaded via GitHub Actions at $(date)" > test-upload.txt
+          echo "FTP Server: ${{ steps.instance.outputs.public_ip }}:29720" >> test-upload.txt
+
+      - name: Upload test file to FTP server
+        run: |
+          PUBLIC_IP="${{ steps.instance.outputs.public_ip }}"
+
+          echo "Uploading test file to FTP server..."
+
+          lftp -u "${{ vars.FTP_USER }},${{ secrets.FTP_PASSWORD }}" \
+            -p 29720 $PUBLIC_IP << 'FTPEOF'
+          cd upload
+          put test-upload.txt
+          ls
+          quit
+          FTPEOF
+
+          echo "File uploaded successfully!"
+
+      - name: Verify file upload
+        run: |
+          echo "Waiting 30 seconds for cron job to process file..."
+          sleep 30
+
+          echo "Checking if file was moved to S3..."
+          if aws s3 ls s3://${{ vars.S3_BUCKET }}/incoming/test-upload.txt; then
+            echo "SUCCESS: File was successfully transferred to S3!"
+          else
+            echo "WARNING: File not yet in S3, it may take up to 2 minutes for the cron job to run"
+            echo "The deployment is complete, but file transfer is asynchronous"
+          fi
+
+      - name: Display deployment summary
+        if: always()
+        run: |
+          echo "========================================="
+          echo "Deployment Summary"
+          echo "========================================="
+          echo "Stack Name: ${{ env.STACK_NAME }}"
+          echo "Instance ID: ${{ steps.instance.outputs.instance_id }}"
+          echo "Public IP: ${{ steps.instance.outputs.public_ip }}"
+          echo "FTP Port: 29720"
+          echo "FTP User: ${{ vars.FTP_USER }}"
+          echo "S3 Bucket: ${{ vars.S3_BUCKET }}"
+          echo "CloudWatch Log Group: /aws/ec2/ftp-server"
+          echo "========================================="
+          echo ""
+          echo "To connect via FTP:"
+          echo "ftp -p 29720 ${{ steps.instance.outputs.public_ip }}"
+          echo ""
+          echo "Files uploaded to the 'upload' folder will be automatically"
+          echo "transferred to s3://${{ vars.S3_BUCKET }}/incoming/"
+          echo "========================================="
+
+      - name: Check CloudWatch logs (for debugging)
+        if: failure()
+        run: |
+          echo "Fetching recent CloudWatch logs..."
+          aws logs tail /aws/ec2/ftp-server --since 1h --format short || echo "No logs available yet"

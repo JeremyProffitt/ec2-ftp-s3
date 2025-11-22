@@ -1,0 +1,353 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'EC2 FTP Server with CloudWatch Logging and S3 Integration'
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type
+
+  S3BucketName:
+    Type: String
+    Description: S3 bucket for FTP file uploads
+
+  FTPUser:
+    Type: String
+    Description: FTP username
+    NoEcho: false
+
+  FTPPassword:
+    Type: String
+    Description: FTP password
+    NoEcho: true
+
+  KeyName:
+    Type: String
+    Description: EC2 Key Pair name (optional, not used for external access)
+    Default: ''
+
+Conditions:
+  HasKeyName: !Not [!Equals [!Ref KeyName, '']]
+
+Resources:
+  # VPC Configuration
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: FTP-Server-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: FTP-Server-IGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: FTP-Server-PublicSubnet
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: FTP-Server-PublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # Security Group - Only FTP port open
+  FTPSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for FTP server - only port 29720
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 29720
+          ToPort: 29720
+          CidrIp: 0.0.0.0/0
+          Description: FTP Control Port
+        # Passive FTP ports
+        - IpProtocol: tcp
+          FromPort: 21000
+          ToPort: 21100
+          CidrIp: 0.0.0.0/0
+          Description: FTP Passive Ports
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: FTP-Server-SG
+
+  # IAM Role for EC2
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:aws:s3:::${S3BucketName}'
+                  - !Sub 'arn:aws:s3:::${S3BucketName}/*'
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: '*'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  # CloudWatch Log Group
+  FTPLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/ec2/ftp-server
+      RetentionInDays: 7
+
+  # EC2 Instance
+  FTPServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref FTPSecurityGroup
+          SubnetId: !Ref PublicSubnet
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 10
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          # Update system
+          yum update -y
+
+          # Install required packages
+          yum install -y vsftpd aws-cli amazon-cloudwatch-agent
+
+          # Create FTP user
+          useradd -m -s /bin/bash ${FTPUser}
+          echo "${FTPUser}:${FTPPassword}" | chpasswd
+
+          # Create FTP directory
+          mkdir -p /home/${FTPUser}/ftp/upload
+          chown -R ${FTPUser}:${FTPUser} /home/${FTPUser}/ftp
+          chmod -R 755 /home/${FTPUser}/ftp
+
+          # Configure vsftpd
+          cat > /etc/vsftpd/vsftpd.conf << 'EOF'
+          anonymous_enable=NO
+          local_enable=YES
+          write_enable=YES
+          local_umask=022
+          dirmessage_enable=YES
+          xferlog_enable=YES
+          xferlog_file=/var/log/vsftpd.log
+          xferlog_std_format=YES
+          connect_from_port_20=NO
+          listen=YES
+          listen_port=29720
+          pam_service_name=vsftpd
+          userlist_enable=YES
+          tcp_wrappers=YES
+          pasv_enable=YES
+          pasv_min_port=21000
+          pasv_max_port=21100
+          pasv_address=PUBLIC_IP_PLACEHOLDER
+          chroot_local_user=YES
+          allow_writeable_chroot=YES
+          local_root=/home/$USER/ftp
+          user_sub_token=$USER
+          EOF
+
+          # Get public IP and update config
+          PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+          sed -i "s/PUBLIC_IP_PLACEHOLDER/$PUBLIC_IP/" /etc/vsftpd/vsftpd.conf
+
+          # Add FTP user to allowed users
+          echo "${FTPUser}" > /etc/vsftpd/user_list
+
+          # Create CloudWatch agent config
+          cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json << 'EOF'
+          {
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    {
+                      "file_path": "/var/log/vsftpd.log",
+                      "log_group_name": "/aws/ec2/ftp-server",
+                      "log_stream_name": "vsftpd-{instance_id}"
+                    },
+                    {
+                      "file_path": "/var/log/ftp-to-s3.log",
+                      "log_group_name": "/aws/ec2/ftp-server",
+                      "log_stream_name": "ftp-to-s3-{instance_id}"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+          EOF
+
+          # Start CloudWatch agent
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+            -a fetch-config \
+            -m ec2 \
+            -s \
+            -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
+
+          # Create S3 sync script
+          cat > /usr/local/bin/ftp-to-s3.sh << 'EOFSCRIPT'
+          #!/bin/bash
+
+          FTP_DIR="/home/${FTPUser}/ftp/upload"
+          S3_BUCKET="${S3BucketName}"
+          LOG_FILE="/var/log/ftp-to-s3.log"
+
+          log() {
+              echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
+          }
+
+          log "Starting FTP to S3 sync"
+
+          # Find files in upload directory
+          find $FTP_DIR -type f -mmin +1 | while read file; do
+              if [ -f "$file" ]; then
+                  filename=$(basename "$file")
+                  log "Processing file: $filename"
+
+                  # Upload to S3
+                  if aws s3 cp "$file" "s3://$S3_BUCKET/incoming/$filename"; then
+                      log "Successfully uploaded $filename to S3"
+                      rm -f "$file"
+                      log "Deleted local file: $filename"
+                  else
+                      log "ERROR: Failed to upload $filename to S3"
+                  fi
+              fi
+          done
+
+          log "FTP to S3 sync completed"
+          EOFSCRIPT
+
+          # Replace variables in script
+          sed -i "s/\${FTPUser}/${FTPUser}/g" /usr/local/bin/ftp-to-s3.sh
+          sed -i "s/\${S3BucketName}/${S3BucketName}/g" /usr/local/bin/ftp-to-s3.sh
+
+          chmod +x /usr/local/bin/ftp-to-s3.sh
+
+          # Create log file
+          touch /var/log/ftp-to-s3.log
+          chmod 644 /var/log/ftp-to-s3.log
+
+          # Add cron job (runs every 2 minutes)
+          echo "*/2 * * * * /usr/local/bin/ftp-to-s3.sh" | crontab -
+
+          # Start and enable services
+          systemctl start vsftpd
+          systemctl enable vsftpd
+          systemctl start crond
+          systemctl enable crond
+
+          # Create ready marker
+          echo "FTP_SERVER_READY" > /tmp/ftp-ready
+
+      Tags:
+        - Key: Name
+          Value: FTP-Server
+
+Outputs:
+  InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref FTPServer
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceId'
+
+  PublicIP:
+    Description: Public IP address of FTP server
+    Value: !GetAtt FTPServer.PublicIp
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicIP'
+
+  FTPPort:
+    Description: FTP port
+    Value: 29720
+    Export:
+      Name: !Sub '${AWS::StackName}-FTPPort'
+
+  LogGroupName:
+    Description: CloudWatch Log Group name
+    Value: !Ref FTPLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroup'

@@ -203,7 +203,7 @@ Resources:
 
           # Install required packages
           echo "Installing required packages..."
-          yum install -y vsftpd aws-cli amazon-cloudwatch-agent firewalld
+          yum install -y vsftpd aws-cli amazon-cloudwatch-agent
           echo "Packages installed successfully"
 
           # Create FTP user
@@ -250,14 +250,11 @@ Resources:
           # Add FTP user to allowed users
           echo "${FTPUser}" > /etc/vsftpd/user_list
 
-          # Configure firewall for FTP
-          echo "Configuring firewall for FTP ports..."
-          systemctl start firewalld
-          systemctl enable firewalld
-          firewall-cmd --permanent --add-port=29720/tcp
-          firewall-cmd --permanent --add-port=21000-21100/tcp
-          firewall-cmd --reload
-          echo "Firewall configured successfully"
+          # Disable firewalld (using EC2 Security Group instead)
+          echo "Disabling firewalld (EC2 Security Group handles firewall)..."
+          systemctl stop firewalld 2>/dev/null || true
+          systemctl disable firewalld 2>/dev/null || true
+          echo "Firewall disabled - using EC2 Security Group for access control"
 
           # Create CloudWatch agent config
           cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json << 'EOF'

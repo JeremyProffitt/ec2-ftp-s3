@@ -30,9 +30,9 @@ jobs:
         run: |
           aws s3 cp cloudformation-template.yaml s3://${{ vars.CLOUDFORMATION_S3_BUCKET }}/cloudformation-template.yaml
 
-      - name: Check and cleanup failed stack
+      - name: Delete existing stack to force fresh deployment
         run: |
-          echo "Checking if stack exists and needs cleanup..."
+          echo "Checking if stack exists..."
 
           STACK_STATUS=$(aws cloudformation describe-stacks \
             --stack-name ${{ env.STACK_NAME }} \
@@ -41,16 +41,15 @@ jobs:
 
           echo "Stack status: $STACK_STATUS"
 
-          if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]] || [[ "$STACK_STATUS" == "CREATE_FAILED" ]]; then
-            echo "Stack is in $STACK_STATUS state, deleting it first..."
+          if [[ "$STACK_STATUS" != "DOES_NOT_EXIST" ]]; then
+            echo "Deleting existing stack to ensure fresh deployment with updated UserData..."
             aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}
 
             echo "Waiting for stack deletion to complete..."
             aws cloudformation wait stack-delete-complete --stack-name ${{ env.STACK_NAME }}
             echo "Stack deleted successfully"
-          elif [[ "$STACK_STATUS" == *"IN_PROGRESS"* ]]; then
-            echo "Stack operation in progress, waiting for it to complete..."
-            sleep 60
+          else
+            echo "No existing stack found, proceeding with fresh deployment"
           fi
 
       - name: Deploy CloudFormation stack

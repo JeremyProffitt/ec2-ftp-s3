@@ -168,7 +168,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref InstanceType
-      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}'
+      ImageId: !Sub '{{resolve:ssm:/aws/service/canonical/ubuntu/server/22.04/stable/current/arm64/hvm/ebs-gp2/ami-id}}'
       KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
       IamInstanceProfile: !Ref EC2InstanceProfile
       NetworkInterfaces:
@@ -178,7 +178,7 @@ Resources:
             - !Ref FTPSecurityGroup
           SubnetId: !Ref PublicSubnet
       BlockDeviceMappings:
-        - DeviceName: /dev/xvda
+        - DeviceName: /dev/sda1
           Ebs:
             VolumeType: gp3
             VolumeSize: 10
@@ -199,12 +199,21 @@ Resources:
 
           # Update system
           echo "Updating system packages..."
-          yum update -y
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -y
+          apt-get upgrade -y
 
           # Install required packages
           echo "Installing required packages..."
-          yum install -y vsftpd aws-cli amazon-cloudwatch-agent
+          apt-get install -y vsftpd awscli wget
           echo "Packages installed successfully"
+
+          # Install CloudWatch agent
+          echo "Installing CloudWatch agent..."
+          wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/arm64/latest/amazon-cloudwatch-agent.deb
+          dpkg -i -E ./amazon-cloudwatch-agent.deb
+          rm -f ./amazon-cloudwatch-agent.deb
+          echo "CloudWatch agent installed"
 
           # Create FTP user
           echo "Creating FTP user: ${FTPUser}"

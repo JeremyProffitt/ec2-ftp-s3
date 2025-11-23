@@ -248,6 +248,7 @@ Resources:
           listen_port=29720
           pam_service_name=vsftpd
           userlist_enable=YES
+          userlist_deny=NO
           tcp_wrappers=NO
           pasv_enable=YES
           pasv_min_port=21000

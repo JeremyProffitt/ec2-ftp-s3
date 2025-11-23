@@ -364,9 +364,9 @@ Resources:
           echo "Checking vsftpd status..."
           systemctl status vsftpd || true
 
-          echo "Starting crond service..."
-          systemctl start crond
-          systemctl enable crond
+          echo "Starting cron service..."
+          systemctl start cron
+          systemctl enable cron
 
           # Verify FTP port is listening
           echo "Verifying FTP port 29720 is listening..."

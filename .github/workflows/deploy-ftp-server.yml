@@ -173,6 +173,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ftp lftp
 
+      - name: Test nginx network connectivity
+        run: |
+          echo "Testing nginx on port 23235..."
+          PUBLIC_IP="${{ steps.instance.outputs.public_ip }}"
+
+          MAX_WAIT=180  # 3 minutes
+          ELAPSED=0
+          INTERVAL=10
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            echo "Testing HTTP connection to port 23235 (elapsed: ${ELAPSED}s)..."
+
+            if curl -s --connect-timeout 5 "http://$PUBLIC_IP:23235" | grep -q "OK"; then
+              echo "SUCCESS: Nginx is accessible on port 23235!"
+              echo "Response: $(curl -s http://$PUBLIC_IP:23235)"
+              break
+            else
+              echo "Port 23235 not yet accessible..."
+            fi
+
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "WARNING: Nginx not accessible after 3 minutes, but continuing..."
+          fi
+
       - name: Wait for FTP server to be ready (max 15 minutes)
         run: |
           echo "Waiting for FTP server to be ready..."

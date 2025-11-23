@@ -105,6 +105,12 @@ Resources:
           ToPort: 21100
           CidrIp: 0.0.0.0/0
           Description: FTP Passive Ports
+        # Nginx test port
+        - IpProtocol: tcp
+          FromPort: 23235
+          ToPort: 23235
+          CidrIp: 0.0.0.0/0
+          Description: Nginx Test Port
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
@@ -205,7 +211,7 @@ Resources:
 
           # Install required packages
           echo "Installing required packages..."
-          apt-get install -y vsftpd awscli wget
+          apt-get install -y vsftpd awscli wget nginx
           echo "Packages installed successfully"
 
           # Install CloudWatch agent
@@ -366,6 +372,37 @@ Resources:
           echo "Verifying FTP port 29720 is listening..."
           sleep 5
           ss -tuln | grep 29720 || echo "WARNING: Port 29720 not listening yet"
+
+          # Configure nginx on port 23235 for network testing
+          echo "Configuring nginx on port 23235..."
+          cat > /etc/nginx/sites-available/test << 'EOF'
+          server {
+              listen 23235 default_server;
+              listen [::]:23235 default_server;
+
+              location / {
+                  return 200 'OK - Network test successful\n';
+                  add_header Content-Type text/plain;
+              }
+          }
+          EOF
+
+          # Disable default site and enable test site
+          rm -f /etc/nginx/sites-enabled/default
+          ln -s /etc/nginx/sites-available/test /etc/nginx/sites-enabled/test
+
+          # Start nginx
+          echo "Starting nginx service..."
+          systemctl start nginx
+          systemctl enable nginx
+
+          echo "Checking nginx status..."
+          systemctl status nginx || true
+
+          # Verify nginx port is listening
+          echo "Verifying nginx port 23235 is listening..."
+          sleep 2
+          ss -tuln | grep 23235 || echo "WARNING: Port 23235 not listening yet"
 
           # Create ready marker
           echo "FTP_SERVER_READY" > /tmp/ftp-ready

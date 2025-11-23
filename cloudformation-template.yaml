@@ -233,7 +233,7 @@ Resources:
           chmod -R 755 /home/${FTPUser}/ftp
 
           # Configure vsftpd
-          cat > /etc/vsftpd/vsftpd.conf << 'EOF'
+          cat > /etc/vsftpd.conf << 'EOF'
           anonymous_enable=NO
           local_enable=YES
           write_enable=YES
@@ -262,9 +262,10 @@ Resources:
 
           # Get public IP and update config
           PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-          sed -i "s/PUBLIC_IP_PLACEHOLDER/$PUBLIC_IP/" /etc/vsftpd/vsftpd.conf
+          sed -i "s/PUBLIC_IP_PLACEHOLDER/$PUBLIC_IP/" /etc/vsftpd.conf
 
           # Add FTP user to allowed users
+          mkdir -p /etc/vsftpd
           echo "${FTPUser}" > /etc/vsftpd/user_list
 
           # Disable firewalld (using EC2 Security Group instead)

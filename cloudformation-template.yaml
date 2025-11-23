@@ -265,8 +265,12 @@ Resources:
           sed -i "s/PUBLIC_IP_PLACEHOLDER/$PUBLIC_IP/" /etc/vsftpd.conf
 
           # Add FTP user to allowed users
-          mkdir -p /etc/vsftpd
-          echo "${FTPUser}" > /etc/vsftpd/user_list
+          echo "${FTPUser}" > /etc/vsftpd.user_list
+
+          # Start vsftpd initially to test config
+          echo "Starting vsftpd service (initial start)..."
+          systemctl start vsftpd
+          systemctl enable vsftpd
 
           # Disable firewalld (using EC2 Security Group instead)
           echo "Disabling firewalld (EC2 Security Group handles firewall)..."
@@ -357,11 +361,7 @@ Resources:
           # Add cron job (runs every 2 minutes)
           echo "*/2 * * * * /usr/local/bin/ftp-to-s3.sh" | crontab -
 
-          # Start and enable services
-          echo "Starting vsftpd service..."
-          systemctl start vsftpd
-          systemctl enable vsftpd
-
+          # Check vsftpd status (already started earlier)
           echo "Checking vsftpd status..."
           systemctl status vsftpd || true
 

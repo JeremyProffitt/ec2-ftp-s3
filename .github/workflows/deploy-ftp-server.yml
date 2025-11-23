@@ -8,7 +8,7 @@ on:
 
 env:
   STACK_NAME: ftp-server-stack
-  AWS_REGION: us-east-1
+  AWS_REGION: us-east-2
 
 jobs:
   deploy:

@@ -243,7 +243,7 @@ Resources:
           xferlog_file=/var/log/vsftpd.log
           xferlog_std_format=YES
           connect_from_port_20=NO
-          listen=NO
+          listen=YES
           listen_ipv6=NO
           listen_port=29720
           pam_service_name=vsftpd

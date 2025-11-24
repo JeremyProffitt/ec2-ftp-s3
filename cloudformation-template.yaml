@@ -345,14 +345,16 @@ Resources:
                   --output text)
 
               if [ $? -eq 0 ]; then
-                  echo "Successfully ${ACTION_TYPE,,} DNS record. Change ID: $CHANGE_ID"
+                  ACTION_LOWER=$(echo "$ACTION_TYPE" | tr '[:upper:]' '[:lower:]')
+                  echo "Successfully $ACTION_LOWER DNS record. Change ID: $CHANGE_ID"
 
                   # Wait for the change to be applied
                   echo "Waiting for DNS change to propagate..."
                   aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
                   echo "DNS record is now active! $DOMAIN_NAME -> $PUBLIC_IP"
               else
-                  echo "ERROR: Failed to ${ACTION_TYPE,,} DNS record"
+                  ACTION_LOWER=$(echo "$ACTION_TYPE" | tr '[:upper:]' '[:lower:]')
+                  echo "ERROR: Failed to $ACTION_LOWER DNS record"
               fi
 
               # Clean up

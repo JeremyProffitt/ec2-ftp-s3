@@ -187,8 +187,7 @@ jobs:
 
             # Try to connect using lftp with explicit port and passive mode
             if timeout 10 lftp -u "${{ vars.FTP_USER }},${{ secrets.FTP_PASSWORD }}" \
-              -e "set ftp:passive-mode true; ls /; quit" \
-              ftp://$PUBLIC_IP:29720 2>&1 | grep -E "(drw|total|upload)"; then
+              -e "set ftp:passive-mode true; open $PUBLIC_IP:29720; ls /; quit" 2>&1 | grep -E "(drw|total|upload)"; then
               echo "FTP server is ready and accepting connections!"
               break
             fi
@@ -222,8 +221,9 @@ jobs:
 
           echo "Uploading test file to FTP server..."
 
-          lftp -u "${{ vars.FTP_USER }},${{ secrets.FTP_PASSWORD }}" ftp://$PUBLIC_IP:29720 << 'FTPEOF'
+          lftp -u "${{ vars.FTP_USER }},${{ secrets.FTP_PASSWORD }}" << 'FTPEOF'
           set ftp:passive-mode true
+          open $PUBLIC_IP:29720
           cd upload
           put test-upload.txt
           ls

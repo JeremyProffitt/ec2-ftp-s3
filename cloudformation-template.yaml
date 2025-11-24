@@ -277,8 +277,25 @@ Resources:
           EOF
 
           # Get public IP and update config
+          echo "Retrieving public IP address..."
           PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+
+          if [ -z "$PUBLIC_IP" ]; then
+              echo "ERROR: Failed to retrieve public IP address"
+              exit 1
+          fi
+
+          echo "Public IP: $PUBLIC_IP"
+          echo "Updating vsftpd configuration with public IP..."
           sed -i "s/PUBLIC_IP_PLACEHOLDER/$PUBLIC_IP/" /etc/vsftpd.conf
+
+          # Verify the substitution worked
+          if grep -q "PUBLIC_IP_PLACEHOLDER" /etc/vsftpd.conf; then
+              echo "ERROR: Failed to replace PUBLIC_IP_PLACEHOLDER in vsftpd.conf"
+              exit 1
+          fi
+
+          echo "vsftpd configuration updated successfully"
 
           # Update/Create Route53 DNS record if DOMAIN_NAME is provided
           DOMAIN_NAME="${DomainName}"
@@ -287,13 +304,24 @@ Resources:
           if [ ! -z "$DOMAIN_NAME" ] && [ ! -z "$HOSTED_ZONE_ID" ]; then
               echo "Managing Route53 DNS record for $DOMAIN_NAME..."
 
-              # Check if the record exists
+              # Check if the record exists to provide better logging
+              echo "Checking if DNS record exists for $DOMAIN_NAME..."
               EXISTING_RECORD=$(aws route53 list-resource-record-sets \
                   --hosted-zone-id "$HOSTED_ZONE_ID" \
-                  --query "ResourceRecordSets[?Name=='$DOMAIN_NAME.']" \
-                  --output json)
+                  --query "ResourceRecordSets[?Name=='$DOMAIN_NAME.' && Type=='A'].ResourceRecords[0].Value" \
+                  --output text 2>/dev/null)
 
-              # Create change batch JSON
+              if [ ! -z "$EXISTING_RECORD" ] && [ "$EXISTING_RECORD" != "None" ]; then
+                  echo "Found existing A record pointing to: $EXISTING_RECORD"
+                  echo "Will update to point to: $PUBLIC_IP"
+                  ACTION_TYPE="Updating"
+              else
+                  echo "No existing A record found"
+                  echo "Will create new A record pointing to: $PUBLIC_IP"
+                  ACTION_TYPE="Creating"
+              fi
+
+              # Create change batch JSON (UPSERT will create if not exists, update if exists)
               cat > /tmp/route53-change.json << EOFROUTE53
           {
             "Changes": [{
@@ -308,8 +336,8 @@ Resources:
           }
           EOFROUTE53
 
-              # Apply the change (UPSERT will create or update)
-              echo "Creating/Updating A record for $DOMAIN_NAME pointing to $PUBLIC_IP..."
+              # Apply the change
+              echo "$ACTION_TYPE A record for $DOMAIN_NAME..."
               CHANGE_ID=$(aws route53 change-resource-record-sets \
                   --hosted-zone-id "$HOSTED_ZONE_ID" \
                   --change-batch file:///tmp/route53-change.json \
@@ -317,14 +345,14 @@ Resources:
                   --output text)
 
               if [ $? -eq 0 ]; then
-                  echo "Successfully created/updated DNS record. Change ID: $CHANGE_ID"
+                  echo "Successfully ${ACTION_TYPE,,} DNS record. Change ID: $CHANGE_ID"
 
                   # Wait for the change to be applied
                   echo "Waiting for DNS change to propagate..."
                   aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
-                  echo "DNS record is now active!"
+                  echo "DNS record is now active! $DOMAIN_NAME -> $PUBLIC_IP"
               else
-                  echo "ERROR: Failed to create/update DNS record"
+                  echo "ERROR: Failed to ${ACTION_TYPE,,} DNS record"
               fi
 
               # Clean up
@@ -336,10 +364,36 @@ Resources:
           # Add FTP user to allowed users
           echo "${FTPUser}" > /etc/vsftpd.user_list
 
+          # Validate vsftpd configuration before starting
+          echo "Validating vsftpd configuration..."
+          if ! grep -q "pasv_address=" /etc/vsftpd.conf; then
+              echo "ERROR: pasv_address not found in vsftpd.conf"
+              exit 1
+          fi
+
+          PASV_ADDR=$(grep "pasv_address=" /etc/vsftpd.conf | cut -d'=' -f2)
+          echo "Configured pasv_address: $PASV_ADDR"
+
+          if [ "$PASV_ADDR" = "PUBLIC_IP_PLACEHOLDER" ]; then
+              echo "ERROR: pasv_address still contains placeholder value"
+              exit 1
+          fi
+
           # Start vsftpd initially to test config
           echo "Starting vsftpd service (initial start)..."
           systemctl start vsftpd
+
+          if [ $? -ne 0 ]; then
+              echo "ERROR: Failed to start vsftpd service"
+              echo "Checking vsftpd status..."
+              systemctl status vsftpd || true
+              echo "Checking vsftpd config..."
+              cat /etc/vsftpd.conf
+              exit 1
+          fi
+
           systemctl enable vsftpd
+          echo "vsftpd service started and enabled successfully"
 
           # Disable firewalld (using EC2 Security Group instead)
           echo "Disabling firewalld (EC2 Security Group handles firewall)..."

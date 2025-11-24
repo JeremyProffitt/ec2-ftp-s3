@@ -487,24 +487,40 @@ Resources:
           touch /var/log/ftp-to-s3.log
           chmod 644 /var/log/ftp-to-s3.log
 
-          # Add cron job (runs every 2 minutes)
-          echo "*/2 * * * * /usr/local/bin/ftp-to-s3.sh" | crontab -
+          # Verify vsftpd is running and listening on port 29720
+          echo "Verifying vsftpd is listening on port 29720..."
+          sleep 3
 
-          # Check vsftpd status (already started earlier)
-          echo "Checking vsftpd status..."
-          systemctl status vsftpd || true
+          MAX_RETRIES=10
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              if ss -tuln | grep ":29720 " > /dev/null; then
+                  echo "SUCCESS: vsftpd is listening on port 29720"
+                  break
+              fi
+              echo "Port 29720 not listening yet, retrying ($((RETRY_COUNT+1))/$MAX_RETRIES)..."
+              sleep 2
+              RETRY_COUNT=$((RETRY_COUNT+1))
+          done
+
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "ERROR: vsftpd failed to listen on port 29720 after $MAX_RETRIES attempts"
+              echo "Checking vsftpd status..."
+              systemctl status vsftpd || true
+              echo "Checking vsftpd logs..."
+              journalctl -u vsftpd -n 50 || true
+              echo "Checking if port is in use..."
+              ss -tuln | grep 29720 || echo "Port 29720 not in use"
+              exit 1
+          fi
+
+          # Add cron job (runs every 2 minutes)
+          echo "Setting up cron job for S3 sync..."
+          echo "*/2 * * * * /usr/local/bin/ftp-to-s3.sh" | crontab -
 
           echo "Starting cron service..."
           systemctl start cron
           systemctl enable cron
-
-          # Verify FTP port is listening
-          echo "Verifying FTP port 29720 is listening..."
-          sleep 5
-          ss -tuln | grep 29720 || echo "WARNING: Port 29720 not listening yet"
-
-          # Restart vsftpd
-          systemctl restart vsftpd
 
           # Create ready marker
           echo "FTP_SERVER_READY" > /tmp/ftp-ready

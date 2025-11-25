@@ -480,8 +480,8 @@ Resources:
           chmod +x /usr/local/bin/ftp-to-s3.sh
 
           #add firewall exceptions for FTP ports
-          ufw allow 21000-21100/tcp
-          ufw allow 29720/tcp
+          #ufw allow 21000-21100/tcp
+          #ufw allow 29720/tcp
 
           # Create log file
           touch /var/log/ftp-to-s3.log

@@ -524,6 +524,7 @@ Resources:
 
           # Restart vsftpd to ensure it picks up all configuration changes
           echo "Restarting vsftpd service to apply final configuration..."
+          sleep 60
           systemctl restart vsftpd
           sleep 2
 

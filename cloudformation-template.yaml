@@ -257,35 +257,33 @@ Resources:
           chown -R ${FTPUser}:${FTPUser} /home/${FTPUser}/ftp
           chmod -R 755 /home/${FTPUser}/ftp
 
-          # Configure vsftpd (using heredoc without indentation to avoid config errors)
-          cat > /etc/vsftpd.conf << 'VSFTPD_EOF'
-anonymous_enable=NO
-local_enable=YES
-write_enable=YES
-local_umask=022
-dirmessage_enable=YES
-xferlog_enable=YES
-xferlog_file=/var/log/vsftpd.log
-xferlog_std_format=YES
-connect_from_port_20=NO
-listen=YES
-listen_ipv6=NO
-listen_port=29720
-pam_service_name=vsftpd
-userlist_enable=YES
-userlist_deny=NO
-userlist_file=/etc/vsftpd.user_list
-tcp_wrappers=NO
-pasv_enable=YES
-pasv_min_port=21000
-pasv_max_port=21100
-pasv_address=PUBLIC_IP_PLACEHOLDER
-chroot_local_user=YES
-allow_writeable_chroot=YES
-local_root=/home/$USER/ftp
-user_sub_token=$USER
-seccomp_sandbox=NO
-VSFTPD_EOF
+          # Configure vsftpd - write config without leading whitespace
+          echo "anonymous_enable=NO" > /etc/vsftpd.conf
+          echo "local_enable=YES" >> /etc/vsftpd.conf
+          echo "write_enable=YES" >> /etc/vsftpd.conf
+          echo "local_umask=022" >> /etc/vsftpd.conf
+          echo "dirmessage_enable=YES" >> /etc/vsftpd.conf
+          echo "xferlog_enable=YES" >> /etc/vsftpd.conf
+          echo "xferlog_file=/var/log/vsftpd.log" >> /etc/vsftpd.conf
+          echo "xferlog_std_format=YES" >> /etc/vsftpd.conf
+          echo "connect_from_port_20=NO" >> /etc/vsftpd.conf
+          echo "listen=YES" >> /etc/vsftpd.conf
+          echo "listen_ipv6=NO" >> /etc/vsftpd.conf
+          echo "listen_port=29720" >> /etc/vsftpd.conf
+          echo "pam_service_name=vsftpd" >> /etc/vsftpd.conf
+          echo "userlist_enable=YES" >> /etc/vsftpd.conf
+          echo "userlist_deny=NO" >> /etc/vsftpd.conf
+          echo "userlist_file=/etc/vsftpd.user_list" >> /etc/vsftpd.conf
+          echo "tcp_wrappers=NO" >> /etc/vsftpd.conf
+          echo "pasv_enable=YES" >> /etc/vsftpd.conf
+          echo "pasv_min_port=21000" >> /etc/vsftpd.conf
+          echo "pasv_max_port=21100" >> /etc/vsftpd.conf
+          echo "pasv_address=PUBLIC_IP_PLACEHOLDER" >> /etc/vsftpd.conf
+          echo "chroot_local_user=YES" >> /etc/vsftpd.conf
+          echo "allow_writeable_chroot=YES" >> /etc/vsftpd.conf
+          echo 'local_root=/home/$USER/ftp' >> /etc/vsftpd.conf
+          echo 'user_sub_token=$USER' >> /etc/vsftpd.conf
+          echo "seccomp_sandbox=NO" >> /etc/vsftpd.conf
 
           # Get public IP and update config
           echo "Retrieving public IP address..."

@@ -187,10 +187,10 @@ jobs:
           while [ $ELAPSED -lt $MAX_WAIT ]; do
             echo "Testing FTP connection (elapsed: ${ELAPSED}s)..."
 
-            # Try to connect using lftp with explicit port and passive mode
+            # Try to connect using lftp with explicit ftp:// URL format
             # Show verbose output for debugging
-            LFTP_OUTPUT=$(timeout 30 lftp -u "${{ vars.FTP_USER }},${{ secrets.FTP_PASSWORD }}" \
-              -e "set ftp:passive-mode true; set net:timeout 10; open $PUBLIC_IP:29720; pwd; ls; quit" 2>&1 || true)
+            LFTP_OUTPUT=$(timeout 30 lftp -e "set ftp:passive-mode true; set net:timeout 10; ls; quit" \
+              "ftp://${{ vars.FTP_USER }}:${{ secrets.FTP_PASSWORD }}@$PUBLIC_IP:29720" 2>&1 || true)
 
             echo "LFTP output: $LFTP_OUTPUT"
 
@@ -226,7 +226,8 @@ jobs:
         run: |
           echo "Uploading test file to FTP server..."
 
-          lftp -u "${{ vars.FTP_USER }},${{ secrets.FTP_PASSWORD }}" -e "set ftp:passive-mode true; open ${{ steps.instance.outputs.public_ip }}:29720; cd upload; put test-upload.txt; ls; quit"
+          lftp -e "set ftp:passive-mode true; cd upload; put test-upload.txt; ls; quit" \
+            "ftp://${{ vars.FTP_USER }}:${{ secrets.FTP_PASSWORD }}@${{ steps.instance.outputs.public_ip }}:29720"
 
           echo "File uploaded successfully!"
 

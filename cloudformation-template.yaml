@@ -246,6 +246,18 @@ Resources:
           rm -f ./amazon-cloudwatch-agent.deb
           echo "CloudWatch agent installed"
 
+          # Ensure ftp system user exists (vsftpd needs this for internal operations)
+          echo "Checking for ftp system user..."
+          if ! id ftp &>/dev/null; then
+              echo "Creating ftp system user..."
+              useradd -r -s /usr/sbin/nologin ftp || echo "ftp user may already exist"
+          else
+              echo "ftp system user already exists"
+          fi
+          # Verify nobody user exists too
+          echo "Checking for nobody user..."
+          id nobody || echo "nobody user not found - this may cause issues"
+
           # Create FTP user
           echo "Creating FTP user: ${FTPUser}"
           useradd -m -s /bin/bash ${FTPUser}
@@ -280,10 +292,10 @@ Resources:
           echo "listen_ipv6=NO" >> /etc/vsftpd.conf
           echo "listen_port=29720" >> /etc/vsftpd.conf
           echo "pam_service_name=vsftpd" >> /etc/vsftpd.conf
-          # Disable userlist - rely only on PAM for authentication
-          echo "userlist_enable=NO" >> /etc/vsftpd.conf
-          # echo "userlist_deny=NO" >> /etc/vsftpd.conf
-          # echo "userlist_file=/etc/vsftpd.user_list" >> /etc/vsftpd.conf
+          # Enable userlist as a whitelist (deny=NO means allow users in list)
+          echo "userlist_enable=YES" >> /etc/vsftpd.conf
+          echo "userlist_deny=NO" >> /etc/vsftpd.conf
+          echo "userlist_file=/etc/vsftpd.user_list" >> /etc/vsftpd.conf
           echo "tcp_wrappers=NO" >> /etc/vsftpd.conf
           echo "pasv_enable=YES" >> /etc/vsftpd.conf
           echo "pasv_min_port=21000" >> /etc/vsftpd.conf
@@ -387,16 +399,14 @@ Resources:
           echo "User list contents:"
           cat /etc/vsftpd.user_list
 
-          # Fix PAM config for vsftpd - use minimal direct PAM config (no @includes)
+          # Fix PAM config for vsftpd - use standard pam_unix.so authentication
           echo "Configuring PAM for vsftpd..."
-          # Try using pam_permit.so to completely bypass auth and test if vsftpd works
-          # This is for debugging only - to isolate whether the issue is PAM or vsftpd
-          echo "# DEBUG: Minimal vsftpd PAM - using pam_permit to bypass auth for testing" > /etc/pam.d/vsftpd
+          echo "# vsftpd PAM configuration" > /etc/pam.d/vsftpd
           echo "auth    required        pam_listfile.so item=user sense=deny file=/etc/ftpusers onerr=succeed" >> /etc/pam.d/vsftpd
-          echo "auth    sufficient      pam_permit.so" >> /etc/pam.d/vsftpd
-          echo "account sufficient      pam_permit.so" >> /etc/pam.d/vsftpd
-          echo "session sufficient      pam_permit.so" >> /etc/pam.d/vsftpd
-          echo "PAM config (DEBUG - using pam_permit to bypass auth):"
+          echo "auth    required        pam_unix.so" >> /etc/pam.d/vsftpd
+          echo "account required        pam_unix.so" >> /etc/pam.d/vsftpd
+          echo "session required        pam_unix.so" >> /etc/pam.d/vsftpd
+          echo "PAM config:"
           cat /etc/pam.d/vsftpd
 
           # Show what common-auth contains for debugging

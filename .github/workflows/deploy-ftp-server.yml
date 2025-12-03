@@ -224,18 +224,9 @@ jobs:
 
       - name: Upload test file to FTP server
         run: |
-          PUBLIC_IP="${{ steps.instance.outputs.public_ip }}"
-
           echo "Uploading test file to FTP server..."
 
-          lftp -u "${{ vars.FTP_USER }},${{ secrets.FTP_PASSWORD }}" << 'FTPEOF'
-          set ftp:passive-mode true
-          open $PUBLIC_IP:29720
-          cd upload
-          put test-upload.txt
-          ls
-          quit
-          FTPEOF
+          lftp -u "${{ vars.FTP_USER }},${{ secrets.FTP_PASSWORD }}" -e "set ftp:passive-mode true; open ${{ steps.instance.outputs.public_ip }}:29720; cd upload; put test-upload.txt; ls; quit"
 
           echo "File uploaded successfully!"
 

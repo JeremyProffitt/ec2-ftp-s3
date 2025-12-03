@@ -226,8 +226,12 @@ Resources:
 
           # Install required packages
           echo "Installing required packages..."
-          apt-get install -y vsftpd awscli wget
+          apt-get install -y vsftpd awscli wget at
           echo "Packages installed successfully"
+
+          # Enable atd service for scheduled one-time jobs
+          systemctl enable atd
+          systemctl start atd
 
           # Install CloudWatch agent
           echo "Installing CloudWatch agent..."
@@ -522,20 +526,10 @@ Resources:
           systemctl start cron
           systemctl enable cron
 
-          # Restart vsftpd to ensure it picks up all configuration changes
-          echo "Restarting vsftpd service to apply final configuration..."
-          sleep 60
-          systemctl restart vsftpd
-          sleep 2
-
-          # Verify vsftpd is running after restart
-          if systemctl is-active --quiet vsftpd; then
-              echo "SUCCESS: vsftpd is running after restart"
-              ss -tuln | grep 29720 || echo "WARNING: Port 29720 not yet visible (may take a moment)"
-          else
-              echo "ERROR: vsftpd failed to start after restart"
-              systemctl status vsftpd || true
-          fi
+          # Schedule one-time vsftpd restart 1 minute from now using 'at'
+          echo "Scheduling one-time vsftpd restart in 1 minute..."
+          echo "systemctl restart vsftpd && logger 'vsftpd restarted by scheduled at job'" | at now + 1 minute
+          echo "One-time vsftpd restart scheduled successfully"
 
           # Create ready marker
           echo "FTP_SERVER_READY" > /tmp/ftp-ready

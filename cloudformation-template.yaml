@@ -528,13 +528,11 @@ Resources:
                   filename=$(basename "$file")
                   log "Processing file: $filename"
 
-                  # Upload to S3
-                  if aws s3 cp "$file" "s3://$S3_BUCKET/incoming/$filename"; then
-                      log "Successfully uploaded $filename to S3"
-                      rm -f "$file"
-                      log "Deleted local file: $filename"
+                  # Move to S3
+                  if aws s3 mv "$file" "s3://$S3_BUCKET/incoming/$filename"; then
+                      log "Successfully moved $filename to S3"
                   else
-                      log "ERROR: Failed to upload $filename to S3"
+                      log "ERROR: Failed to move $filename to S3"
                   fi
               fi
           done
@@ -542,10 +540,7 @@ Resources:
           log "FTP to S3 sync completed"
           EOFSCRIPT
 
-          # Replace variables in script
-          sed -i "s/\${FTPUser}/${FTPUser}/g" /usr/local/bin/ftp-to-s3.sh
-          sed -i "s/\${S3BucketName}/${S3BucketName}/g" /usr/local/bin/ftp-to-s3.sh
-
+          # Note: Variables ${FTPUser} and ${S3BucketName} are substituted by CloudFormation !Sub
           chmod +x /usr/local/bin/ftp-to-s3.sh
 
           #add firewall exceptions for FTP ports

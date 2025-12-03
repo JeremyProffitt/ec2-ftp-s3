@@ -280,9 +280,10 @@ Resources:
           echo "listen_ipv6=NO" >> /etc/vsftpd.conf
           echo "listen_port=29720" >> /etc/vsftpd.conf
           echo "pam_service_name=vsftpd" >> /etc/vsftpd.conf
-          echo "userlist_enable=YES" >> /etc/vsftpd.conf
-          echo "userlist_deny=NO" >> /etc/vsftpd.conf
-          echo "userlist_file=/etc/vsftpd.user_list" >> /etc/vsftpd.conf
+          # Disable userlist - rely only on PAM for authentication
+          echo "userlist_enable=NO" >> /etc/vsftpd.conf
+          # echo "userlist_deny=NO" >> /etc/vsftpd.conf
+          # echo "userlist_file=/etc/vsftpd.user_list" >> /etc/vsftpd.conf
           echo "tcp_wrappers=NO" >> /etc/vsftpd.conf
           echo "pasv_enable=YES" >> /etc/vsftpd.conf
           echo "pasv_min_port=21000" >> /etc/vsftpd.conf

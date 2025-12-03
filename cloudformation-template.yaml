@@ -377,11 +377,22 @@ Resources:
           echo "User list contents:"
           cat /etc/vsftpd.user_list
 
-          # Fix PAM config for vsftpd - remove shell restriction that blocks FTP users
+          # Fix PAM config for vsftpd - use simple PAM config that allows local users
           echo "Configuring PAM for vsftpd..."
-          printf '%s\n' "# Standard PAM configuration for vsftpd" "auth    required    pam_unix.so" "account required    pam_unix.so" "session required    pam_unix.so" > /etc/pam.d/vsftpd
+          # Create simple PAM config - just local authentication, no shell check
+          echo "# PAM configuration for vsftpd" > /etc/pam.d/vsftpd
+          echo "@include common-auth" >> /etc/pam.d/vsftpd
+          echo "@include common-account" >> /etc/pam.d/vsftpd
+          echo "@include common-session" >> /etc/pam.d/vsftpd
           echo "PAM config:"
           cat /etc/pam.d/vsftpd
+
+          # Debug: Verify user exists and has correct settings
+          echo "Verifying FTP user setup:"
+          id ${FTPUser} || echo "ERROR: User ${FTPUser} not found!"
+          getent passwd ${FTPUser}
+          echo "User shell: $(getent passwd ${FTPUser} | cut -d: -f7)"
+          cat /etc/vsftpd.user_list
 
           # Validate vsftpd configuration before starting
           echo "Validating vsftpd configuration..."

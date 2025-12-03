@@ -374,6 +374,19 @@ Resources:
 
           # Add FTP user to allowed users
           echo "${FTPUser}" > /etc/vsftpd.user_list
+          echo "User list contents:"
+          cat /etc/vsftpd.user_list
+
+          # Fix PAM config for vsftpd - remove shell restriction that blocks FTP users
+          echo "Configuring PAM for vsftpd..."
+          cat > /etc/pam.d/vsftpd << 'PAM_EOF'
+# Standard PAM configuration for vsftpd
+auth    required    pam_unix.so
+account required    pam_unix.so
+session required    pam_unix.so
+PAM_EOF
+          echo "PAM config:"
+          cat /etc/pam.d/vsftpd
 
           # Validate vsftpd configuration before starting
           echo "Validating vsftpd configuration..."

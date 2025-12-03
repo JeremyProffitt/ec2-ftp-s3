@@ -252,7 +252,8 @@ Resources:
           # Debug: Show password length (not the password itself)
           PWD_LEN=$(echo -n "${FTPPassword}" | wc -c)
           echo "Password length received: $PWD_LEN characters"
-          echo "${FTPUser}:${FTPPassword}" | chpasswd
+          # Use SHA-512 hash explicitly (yescrypt $y$ may not work with vsftpd/PAM)
+          echo "${FTPUser}:${FTPPassword}" | chpasswd -c SHA512
           CHPASSWD_RESULT=$?
           echo "chpasswd exit code: $CHPASSWD_RESULT"
           echo "FTP user created successfully"

@@ -380,13 +380,11 @@ Resources:
           # Fix PAM config for vsftpd - use explicit minimal config without includes
           echo "Configuring PAM for vsftpd..."
           # Create explicit PAM config with just pam_unix for password auth
-          # Avoid @include as common-auth may have checks that block FTP
-          cat > /etc/pam.d/vsftpd << 'PAMEOF'
-# PAM configuration for vsftpd - minimal config for local users
-auth       required     pam_unix.so
-account    required     pam_unix.so
-session    required     pam_unix.so
-PAMEOF
+          # Using echo commands to avoid YAML heredoc parsing issues
+          echo "# PAM configuration for vsftpd - minimal config for local users" > /etc/pam.d/vsftpd
+          echo "auth       required     pam_unix.so" >> /etc/pam.d/vsftpd
+          echo "account    required     pam_unix.so" >> /etc/pam.d/vsftpd
+          echo "session    required     pam_unix.so" >> /etc/pam.d/vsftpd
           echo "PAM config:"
           cat /etc/pam.d/vsftpd
 

@@ -229,6 +229,12 @@ Resources:
           apt-get install -y vsftpd awscli wget at
           echo "Packages installed successfully"
 
+          # Stop vsftpd immediately - it auto-starts with default config on install
+          # We need to stop it so we can configure it properly before starting
+          echo "Stopping vsftpd (auto-started by apt with default config)..."
+          systemctl stop vsftpd
+          systemctl disable vsftpd
+
           # Enable atd service for scheduled one-time jobs
           systemctl enable atd
           systemctl start atd

@@ -388,14 +388,14 @@ Resources:
 
           # Fix PAM config for vsftpd - use minimal direct PAM config (no @includes)
           echo "Configuring PAM for vsftpd..."
-          # Use minimal PAM config - common-auth includes pam_faillock and other modules
-          # that may be blocking authentication. Use pam_unix.so directly.
-          echo "# Minimal vsftpd PAM configuration" > /etc/pam.d/vsftpd
+          # Try using pam_permit.so to completely bypass auth and test if vsftpd works
+          # This is for debugging only - to isolate whether the issue is PAM or vsftpd
+          echo "# DEBUG: Minimal vsftpd PAM - using pam_permit to bypass auth for testing" > /etc/pam.d/vsftpd
           echo "auth    required        pam_listfile.so item=user sense=deny file=/etc/ftpusers onerr=succeed" >> /etc/pam.d/vsftpd
-          echo "auth    required        pam_unix.so" >> /etc/pam.d/vsftpd
-          echo "account required        pam_unix.so" >> /etc/pam.d/vsftpd
-          echo "session required        pam_unix.so" >> /etc/pam.d/vsftpd
-          echo "PAM config:"
+          echo "auth    sufficient      pam_permit.so" >> /etc/pam.d/vsftpd
+          echo "account sufficient      pam_permit.so" >> /etc/pam.d/vsftpd
+          echo "session sufficient      pam_permit.so" >> /etc/pam.d/vsftpd
+          echo "PAM config (DEBUG - using pam_permit to bypass auth):"
           cat /etc/pam.d/vsftpd
 
           # Show what common-auth contains for debugging
@@ -548,6 +548,30 @@ Resources:
           # Verify vsftpd is running and listening on port 29720
           echo "Verifying vsftpd is listening on port 29720..."
           sleep 3
+
+          # Debug: Check vsftpd process and shadow permissions
+          echo "Debug: Checking vsftpd process..."
+          ps aux | grep vsftpd | grep -v grep || echo "vsftpd not running as process"
+          echo "Debug: Shadow file permissions..."
+          ls -la /etc/shadow
+          echo "Debug: vsftpd user..."
+          getent passwd ftp || echo "No ftp user"
+          getent passwd vsftpd || echo "No vsftpd user"
+          getent passwd nobody || echo "No nobody user"
+          echo "Debug: shadow group membership..."
+          getent group shadow || echo "No shadow group"
+
+          # Ensure pam_unix helper can authenticate - check unix_chkpwd
+          echo "Debug: Checking unix_chkpwd helper..."
+          ls -la /usr/sbin/unix_chkpwd || echo "unix_chkpwd not found"
+          ls -la /sbin/unix_chkpwd 2>/dev/null || true
+
+          # Skip password test to avoid CloudFormation variable issues
+          echo "Debug: Skipping local password test"
+
+          # Check auth.log for any PAM failures
+          echo "Debug: Recent auth.log entries..."
+          tail -20 /var/log/auth.log 2>/dev/null || echo "No auth.log available"
 
           MAX_RETRIES=10
           RETRY_COUNT=0

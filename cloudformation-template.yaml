@@ -249,8 +249,16 @@ Resources:
           # Create FTP user
           echo "Creating FTP user: ${FTPUser}"
           useradd -m -s /bin/bash ${FTPUser}
+          # Debug: Show password length (not the password itself)
+          PWD_LEN=$(echo -n "${FTPPassword}" | wc -c)
+          echo "Password length received: $PWD_LEN characters"
           echo "${FTPUser}:${FTPPassword}" | chpasswd
+          CHPASSWD_RESULT=$?
+          echo "chpasswd exit code: $CHPASSWD_RESULT"
           echo "FTP user created successfully"
+          # Verify password was set by checking shadow file has a hash
+          SHADOW_HASH=$(getent shadow ${FTPUser} | cut -d: -f2)
+          echo "Password hash starts with: ${SHADOW_HASH:0:3}..."
 
           # Create FTP directory
           mkdir -p /home/${FTPUser}/ftp/upload
@@ -380,12 +388,12 @@ Resources:
           # Fix PAM config for vsftpd - restore Ubuntu default PAM config for vsftpd
           echo "Configuring PAM for vsftpd..."
           # Use the standard Ubuntu vsftpd PAM configuration
-          # This is the default config that works with local users
+          # Order is important: auth rules, then account, then session
           echo "# Standard vsftpd PAM configuration" > /etc/pam.d/vsftpd
           echo "auth    required        pam_listfile.so item=user sense=deny file=/etc/ftpusers onerr=succeed" >> /etc/pam.d/vsftpd
+          echo "@include common-auth" >> /etc/pam.d/vsftpd
           echo "@include common-account" >> /etc/pam.d/vsftpd
           echo "@include common-session" >> /etc/pam.d/vsftpd
-          echo "@include common-auth" >> /etc/pam.d/vsftpd
           echo "PAM config:"
           cat /etc/pam.d/vsftpd
 

@@ -386,17 +386,21 @@ Resources:
           echo "User list contents:"
           cat /etc/vsftpd.user_list
 
-          # Fix PAM config for vsftpd - restore Ubuntu default PAM config for vsftpd
+          # Fix PAM config for vsftpd - use minimal direct PAM config (no @includes)
           echo "Configuring PAM for vsftpd..."
-          # Use the standard Ubuntu vsftpd PAM configuration
-          # Order is important: auth rules, then account, then session
-          echo "# Standard vsftpd PAM configuration" > /etc/pam.d/vsftpd
+          # Use minimal PAM config - common-auth includes pam_faillock and other modules
+          # that may be blocking authentication. Use pam_unix.so directly.
+          echo "# Minimal vsftpd PAM configuration" > /etc/pam.d/vsftpd
           echo "auth    required        pam_listfile.so item=user sense=deny file=/etc/ftpusers onerr=succeed" >> /etc/pam.d/vsftpd
-          echo "@include common-auth" >> /etc/pam.d/vsftpd
-          echo "@include common-account" >> /etc/pam.d/vsftpd
-          echo "@include common-session" >> /etc/pam.d/vsftpd
+          echo "auth    required        pam_unix.so" >> /etc/pam.d/vsftpd
+          echo "account required        pam_unix.so" >> /etc/pam.d/vsftpd
+          echo "session required        pam_unix.so" >> /etc/pam.d/vsftpd
           echo "PAM config:"
           cat /etc/pam.d/vsftpd
+
+          # Show what common-auth contains for debugging
+          echo "Contents of common-auth (for reference):"
+          cat /etc/pam.d/common-auth || echo "Could not read common-auth"
 
           # Make sure FTP user is not in /etc/ftpusers (deny list)
           echo "Checking /etc/ftpusers (deny list):"

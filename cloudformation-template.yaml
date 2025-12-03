@@ -377,13 +377,16 @@ Resources:
           echo "User list contents:"
           cat /etc/vsftpd.user_list
 
-          # Fix PAM config for vsftpd - use simple PAM config that allows local users
+          # Fix PAM config for vsftpd - use explicit minimal config without includes
           echo "Configuring PAM for vsftpd..."
-          # Create simple PAM config - just local authentication, no shell check
-          echo "# PAM configuration for vsftpd" > /etc/pam.d/vsftpd
-          echo "@include common-auth" >> /etc/pam.d/vsftpd
-          echo "@include common-account" >> /etc/pam.d/vsftpd
-          echo "@include common-session" >> /etc/pam.d/vsftpd
+          # Create explicit PAM config with just pam_unix for password auth
+          # Avoid @include as common-auth may have checks that block FTP
+          cat > /etc/pam.d/vsftpd << 'PAMEOF'
+# PAM configuration for vsftpd - minimal config for local users
+auth       required     pam_unix.so
+account    required     pam_unix.so
+session    required     pam_unix.so
+PAMEOF
           echo "PAM config:"
           cat /etc/pam.d/vsftpd
 
@@ -392,6 +395,9 @@ Resources:
           id ${FTPUser} || echo "ERROR: User ${FTPUser} not found!"
           getent passwd ${FTPUser}
           echo "User shell: $(getent passwd ${FTPUser} | cut -d: -f7)"
+          # Verify password is set (check shadow entry exists)
+          echo "Checking password status:"
+          passwd -S ${FTPUser} || echo "Could not check password status"
           cat /etc/vsftpd.user_list
 
           # Validate vsftpd configuration before starting

@@ -377,16 +377,29 @@ Resources:
           echo "User list contents:"
           cat /etc/vsftpd.user_list
 
-          # Fix PAM config for vsftpd - use explicit minimal config without includes
+          # Fix PAM config for vsftpd - restore Ubuntu default PAM config for vsftpd
           echo "Configuring PAM for vsftpd..."
-          # Create explicit PAM config with just pam_unix for password auth
-          # Using echo commands to avoid YAML heredoc parsing issues
-          echo "# PAM configuration for vsftpd - minimal config for local users" > /etc/pam.d/vsftpd
-          echo "auth       required     pam_unix.so" >> /etc/pam.d/vsftpd
-          echo "account    required     pam_unix.so" >> /etc/pam.d/vsftpd
-          echo "session    required     pam_unix.so" >> /etc/pam.d/vsftpd
+          # Use the standard Ubuntu vsftpd PAM configuration
+          # This is the default config that works with local users
+          echo "# Standard vsftpd PAM configuration" > /etc/pam.d/vsftpd
+          echo "auth    required        pam_listfile.so item=user sense=deny file=/etc/ftpusers onerr=succeed" >> /etc/pam.d/vsftpd
+          echo "@include common-account" >> /etc/pam.d/vsftpd
+          echo "@include common-session" >> /etc/pam.d/vsftpd
+          echo "@include common-auth" >> /etc/pam.d/vsftpd
           echo "PAM config:"
           cat /etc/pam.d/vsftpd
+
+          # Make sure FTP user is not in /etc/ftpusers (deny list)
+          echo "Checking /etc/ftpusers (deny list):"
+          cat /etc/ftpusers 2>/dev/null || echo "No /etc/ftpusers file"
+          # Remove FTP user from deny list if present
+          if [ -f /etc/ftpusers ]; then
+              sed -i "/^${FTPUser}$/d" /etc/ftpusers
+          fi
+
+          # Test password hash is set correctly
+          echo "Checking shadow entry (masked):"
+          getent shadow ${FTPUser} | cut -d: -f1,3-
 
           # Debug: Verify user exists and has correct settings
           echo "Verifying FTP user setup:"

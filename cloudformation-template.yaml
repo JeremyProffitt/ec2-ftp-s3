@@ -258,7 +258,7 @@ Resources:
           echo "FTP user created successfully"
           # Verify password was set by checking shadow file has a hash
           SHADOW_HASH=$(getent shadow ${FTPUser} | cut -d: -f2)
-          echo "Password hash starts with: ${SHADOW_HASH:0:3}..."
+          echo "Password hash starts with: $(echo $SHADOW_HASH | cut -c1-3)..."
 
           # Create FTP directory
           mkdir -p /home/${FTPUser}/ftp/upload

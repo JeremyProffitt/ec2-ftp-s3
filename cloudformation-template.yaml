@@ -522,8 +522,8 @@ Resources:
 
           log "Starting FTP to S3 sync"
 
-          # Find files in upload directory
-          find $FTP_DIR -type f -mmin +1 | while read file; do
+          # Find files in upload directory (only files older than 20 minutes)
+          find $FTP_DIR -type f -mmin +20 | while read file; do
               if [ -f "$file" ]; then
                   filename=$(basename "$file")
                   log "Processing file: $filename"

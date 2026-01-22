@@ -36,9 +36,15 @@ Parameters:
     Description: Route53 Hosted Zone ID (required if DomainName is provided)
     Default: ''
 
+  AlertEmail:
+    Type: String
+    Description: Email address for CloudWatch alarm notifications
+    Default: ''
+
 Conditions:
   HasKeyName: !Not [!Equals [!Ref KeyName, '']]
   HasDomainName: !Not [!Equals [!Ref DomainName, '']]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
 
 Resources:
   # VPC Configuration
@@ -123,6 +129,42 @@ Resources:
         - Key: Name
           Value: FTP-Server-SG
 
+  # EFS Security Group - allows NFS traffic from EC2
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EFS - allows NFS from FTP server
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref FTPSecurityGroup
+          Description: NFS from FTP Server
+      Tags:
+        - Key: Name
+          Value: FTP-EFS-SG
+
+  # EFS FileSystem for FTP staging
+  FTPFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      Encrypted: true
+      FileSystemTags:
+        - Key: Name
+          Value: FTP-Staging-EFS
+
+  # EFS Mount Target in Public Subnet
+  EFSMountTarget:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FTPFileSystem
+      SubnetId: !Ref PublicSubnet
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
   # IAM Role for EC2
   EC2Role:
     Type: AWS::IAM::Role
@@ -184,9 +226,52 @@ Resources:
       LogGroupName: /aws/ec2/ftp-server
       RetentionInDays: 7
 
+  # SNS Topic for EFS Alerts
+  EFSAlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: FTP-EFS-Storage-Alerts
+      DisplayName: FTP EFS Storage Alerts
+
+  # SNS Email Subscription
+  EFSAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref EFSAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # CloudWatch Alarm for EFS Storage > 10GB for 1 day
+  EFSStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: FTP-EFS-Storage-High
+      AlarmDescription: EFS storage usage exceeds 10GB for more than 24 hours
+      MetricName: StorageBytes
+      Namespace: AWS/EFS
+      Statistic: Average
+      Period: 3600
+      EvaluationPeriods: 24
+      Threshold: 10737418240
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FileSystemId
+          Value: !Ref FTPFileSystem
+        - Name: StorageClass
+          Value: Total
+      AlarmActions:
+        - !Ref EFSAlertTopic
+      OKActions:
+        - !Ref EFSAlertTopic
+      TreatMissingData: notBreaching
+
   # EC2 Instance
   FTPServer:
     Type: AWS::EC2::Instance
+    DependsOn: EFSMountTarget
     Properties:
       InstanceType: !Ref InstanceType
       ImageId: !Sub '{{resolve:ssm:/aws/service/canonical/ubuntu/server/22.04/stable/current/arm64/hvm/ebs-gp2/ami-id}}'
@@ -226,8 +311,19 @@ Resources:
 
           # Install required packages
           echo "Installing required packages..."
-          apt-get install -y vsftpd awscli wget at
+          apt-get install -y vsftpd awscli wget at nfs-common
           echo "Packages installed successfully"
+
+          # Install amazon-efs-utils for EFS mounting
+          echo "Installing amazon-efs-utils..."
+          apt-get install -y git binutils rustc cargo pkg-config libssl-dev
+          git clone https://github.com/aws/efs-utils /tmp/efs-utils
+          cd /tmp/efs-utils
+          ./build-deb.sh
+          apt-get install -y ./build/amazon-efs-utils*deb
+          cd /
+          rm -rf /tmp/efs-utils
+          echo "amazon-efs-utils installed successfully"
 
           # Stop vsftpd immediately - it auto-starts with default config on install
           # We need to stop it so we can configure it properly before starting
@@ -273,7 +369,28 @@ Resources:
           SHADOW_HASH=$(getent shadow ${FTPUser} | cut -d: -f2)
           echo "Password hash starts with: $(echo $SHADOW_HASH | cut -c1-3)..."
 
-          # Create FTP directory
+          # Create FTP directory mount point
+          mkdir -p /home/${FTPUser}/ftp
+
+          # Mount EFS filesystem
+          echo "Mounting EFS filesystem..."
+          EFS_ID="${FTPFileSystem}"
+          echo "EFS FileSystem ID: $EFS_ID"
+
+          # Add EFS to fstab for persistence across reboots
+          echo "$EFS_ID:/ /home/${FTPUser}/ftp efs _netdev,tls,iam 0 0" >> /etc/fstab
+
+          # Mount the EFS
+          mount -t efs -o tls,iam $EFS_ID:/ /home/${FTPUser}/ftp
+          if [ $? -eq 0 ]; then
+              echo "EFS mounted successfully"
+          else
+              echo "EFS mount failed, trying with nfs4..."
+              # Fallback to nfs4 mount
+              mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport $EFS_ID.efs.${AWS::Region}.amazonaws.com:/ /home/${FTPUser}/ftp
+          fi
+
+          # Create upload subdirectory on EFS
           mkdir -p /home/${FTPUser}/ftp/upload
           chown -R ${FTPUser}:${FTPUser} /home/${FTPUser}/ftp
           chmod -R 755 /home/${FTPUser}/ftp
@@ -650,3 +767,9 @@ Outputs:
     Value: !Ref FTPLogGroup
     Export:
       Name: !Sub '${AWS::StackName}-LogGroup'
+
+  EFSFileSystemId:
+    Description: EFS FileSystem ID for FTP staging
+    Value: !Ref FTPFileSystem
+    Export:
+      Name: !Sub '${AWS::StackName}-EFSFileSystemId'

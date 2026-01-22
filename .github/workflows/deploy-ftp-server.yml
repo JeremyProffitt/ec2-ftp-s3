@@ -66,6 +66,7 @@ jobs:
               FTPPassword=${{ secrets.FTP_PASSWORD }} \
               DomainName=${{ vars.DOMAIN_NAME }} \
               HostedZoneId=${{ vars.HOSTED_ZONE_ID }} \
+              AlertEmail=${{ vars.ALERT_EMAIL }} \
             --capabilities CAPABILITY_IAM \
             --no-fail-on-empty-changeset
 
@@ -82,11 +83,18 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='PublicIP'].OutputValue" \
             --output text)
 
+          EFS_ID=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='EFSFileSystemId'].OutputValue" \
+            --output text)
+
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
           echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "efs_id=$EFS_ID" >> $GITHUB_OUTPUT
 
           echo "Instance ID: $INSTANCE_ID"
           echo "Public IP: $PUBLIC_IP"
+          echo "EFS ID: $EFS_ID"
 
       - name: Wait for EC2 instance to be running (max 15 minutes)
         run: |
@@ -124,10 +132,10 @@ jobs:
             exit 1
           fi
 
-      - name: Wait for instance initialization (additional time for UserData)
+      - name: Wait for instance initialization (additional time for UserData + EFS setup)
         run: |
-          echo "Waiting for instance to complete initialization..."
-          sleep 120
+          echo "Waiting for instance to complete initialization (includes EFS utils build)..."
+          sleep 180
 
       - name: Validate EC2 instance health checks
         run: |
@@ -253,9 +261,11 @@ jobs:
           echo "Stack Name: ${{ env.STACK_NAME }}"
           echo "Instance ID: ${{ steps.instance.outputs.instance_id }}"
           echo "Public IP: ${{ steps.instance.outputs.public_ip }}"
+          echo "EFS FileSystem: ${{ steps.instance.outputs.efs_id }}"
           echo "FTP Port: 29720"
           echo "FTP User: ${{ vars.FTP_USER }}"
           echo "S3 Bucket: ${{ vars.S3_BUCKET }}"
+          echo "Alert Email: ${{ vars.ALERT_EMAIL }}"
           echo "CloudWatch Log Group: /aws/ec2/ftp-server"
           echo "========================================="
           echo ""
@@ -264,6 +274,9 @@ jobs:
           echo ""
           echo "Files uploaded to the 'upload' folder will be automatically"
           echo "transferred to s3://${{ vars.S3_BUCKET }}/incoming/"
+          echo ""
+          echo "EFS Storage Alert: Alarm will trigger when storage"
+          echo "exceeds 10GB for more than 24 hours."
           echo "========================================="
 
       - name: Check CloudWatch logs (for debugging)

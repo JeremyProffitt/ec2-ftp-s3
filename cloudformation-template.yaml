@@ -639,24 +639,68 @@ Resources:
           FTP_DIR="/home/${FTPUser}/ftp"
           S3_BUCKET="${S3BucketName}"
           LOG_FILE="/var/log/ftp-to-s3.log"
+          LOG_GROUP="/aws/ec2/ftp-server"
+          LOG_STREAM="ftp-to-s3-transfers"
 
           log() {
               echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
           }
+
+          # Log to CloudWatch
+          log_to_cloudwatch() {
+              local message="$1"
+              local timestamp=$(date +%s000)
+              aws logs put-log-events \
+                  --log-group-name "$LOG_GROUP" \
+                  --log-stream-name "$LOG_STREAM" \
+                  --log-events "timestamp=$timestamp,message=$message" \
+                  2>/dev/null || true
+          }
+
+          # Ensure CloudWatch log stream exists
+          aws logs create-log-stream --log-group-name "$LOG_GROUP" --log-stream-name "$LOG_STREAM" 2>/dev/null || true
 
           log "Starting FTP to S3 sync"
 
           # Find files in upload directory (only files older than 20 minutes)
           find $FTP_DIR -type f -mmin +20 | while read file; do
               if [ -f "$file" ]; then
-                  filename=$(basename "$file")
-                  log "Processing file: $filename"
+                  # Get original filename and path info
+                  original_filename=$(basename "$file")
+                  original_dir=$(dirname "$file")
 
-                  # Move to S3
-                  if aws s3 mv "$file" "s3://$S3_BUCKET/incoming/$filename"; then
-                      log "Successfully moved $filename to S3"
+                  # Get relative path from FTP_DIR
+                  relative_path="${file#$FTP_DIR/}"
+                  relative_dir=$(dirname "$relative_path")
+
+                  # Get file modification date (YYYY-MM-DD)
+                  file_date=$(date -r "$file" '+%Y-%m-%d')
+
+                  # Build new filename based on folder structure
+                  if [ "$relative_dir" = "." ] || [ "$relative_dir" = "" ]; then
+                      # File is directly in FTP_DIR (no subfolder)
+                      new_filename="${file_date}.${original_filename}"
+                      original_folder="(root)"
                   else
-                      log "ERROR: Failed to move $filename to S3"
+                      # File is in a subfolder - replace path separators with dots
+                      folder_prefix=$(echo "$relative_dir" | tr '/' '.')
+                      new_filename="${file_date}.${folder_prefix}.${original_filename}"
+                      original_folder="$relative_dir"
+                  fi
+
+                  log "Processing: $original_filename -> $new_filename"
+
+                  # Move to S3 with new filename
+                  if aws s3 mv "$file" "s3://$S3_BUCKET/incoming/$new_filename"; then
+                      log "Successfully moved $original_filename to S3 as $new_filename"
+
+                      # Log to CloudWatch with full details
+                      cw_message="FILE_TRANSFER | original_folder=$original_folder | original_filename=$original_filename | new_filename=$new_filename | s3_bucket=$S3_BUCKET | s3_path=s3://$S3_BUCKET/incoming/$new_filename | status=SUCCESS"
+                      log_to_cloudwatch "$cw_message"
+                  else
+                      log "ERROR: Failed to move $original_filename to S3"
+                      cw_message="FILE_TRANSFER | original_folder=$original_folder | original_filename=$original_filename | new_filename=$new_filename | s3_bucket=$S3_BUCKET | status=FAILED"
+                      log_to_cloudwatch "$cw_message"
                   fi
               fi
           done

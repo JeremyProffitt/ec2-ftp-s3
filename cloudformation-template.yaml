@@ -679,12 +679,12 @@ Resources:
                   # Build new filename based on folder structure
                   if [ "$relative_dir" = "." ] || [ "$relative_dir" = "" ]; then
                       # File is directly in FTP_DIR (no subfolder)
-                      new_filename="${file_date}.${original_filename}"
+                      new_filename="${!file_date}.${!original_filename}"
                       original_folder="(root)"
                   else
                       # File is in a subfolder - replace path separators with dots
                       folder_prefix=$(echo "$relative_dir" | tr '/' '.')
-                      new_filename="${file_date}.${folder_prefix}.${original_filename}"
+                      new_filename="${!file_date}.${!folder_prefix}.${!original_filename}"
                       original_folder="$relative_dir"
                   fi
 

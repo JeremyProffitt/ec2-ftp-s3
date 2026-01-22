@@ -314,17 +314,6 @@ Resources:
           apt-get install -y vsftpd awscli wget at nfs-common
           echo "Packages installed successfully"
 
-          # Install amazon-efs-utils for EFS mounting
-          echo "Installing amazon-efs-utils..."
-          apt-get install -y git binutils rustc cargo pkg-config libssl-dev
-          git clone https://github.com/aws/efs-utils /tmp/efs-utils
-          cd /tmp/efs-utils
-          ./build-deb.sh
-          apt-get install -y ./build/amazon-efs-utils*deb
-          cd /
-          rm -rf /tmp/efs-utils
-          echo "amazon-efs-utils installed successfully"
-
           # Stop vsftpd immediately - it auto-starts with default config on install
           # We need to stop it so we can configure it properly before starting
           echo "Stopping vsftpd (auto-started by apt with default config)..."
@@ -372,22 +361,40 @@ Resources:
           # Create FTP directory mount point
           mkdir -p /home/${FTPUser}/ftp
 
-          # Mount EFS filesystem
+          # Mount EFS filesystem using NFS (no efs-utils needed)
           echo "Mounting EFS filesystem..."
           EFS_ID="${FTPFileSystem}"
+          EFS_DNS="$EFS_ID.efs.${AWS::Region}.amazonaws.com"
           echo "EFS FileSystem ID: $EFS_ID"
+          echo "EFS DNS: $EFS_DNS"
 
-          # Add EFS to fstab for persistence across reboots
-          echo "$EFS_ID:/ /home/${FTPUser}/ftp efs _netdev,tls,iam 0 0" >> /etc/fstab
+          # Wait for EFS DNS to be resolvable (can take a few seconds after creation)
+          echo "Waiting for EFS DNS to be resolvable..."
+          MAX_DNS_WAIT=60
+          DNS_WAIT=0
+          while [ $DNS_WAIT -lt $MAX_DNS_WAIT ]; do
+              if nslookup $EFS_DNS > /dev/null 2>&1; then
+                  echo "EFS DNS is resolvable"
+                  break
+              fi
+              echo "Waiting for DNS... ($DNS_WAIT/$MAX_DNS_WAIT)"
+              sleep 5
+              DNS_WAIT=$((DNS_WAIT + 5))
+          done
 
-          # Mount the EFS
-          mount -t efs -o tls,iam $EFS_ID:/ /home/${FTPUser}/ftp
+          # Add EFS to fstab for persistence across reboots (NFS4 mount)
+          echo "$EFS_DNS:/ /home/${FTPUser}/ftp nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport,_netdev 0 0" >> /etc/fstab
+
+          # Mount the EFS using NFS4
+          echo "Mounting EFS via NFS4..."
+          mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport $EFS_DNS:/ /home/${FTPUser}/ftp
           if [ $? -eq 0 ]; then
-              echo "EFS mounted successfully"
+              echo "EFS mounted successfully via NFS4"
           else
-              echo "EFS mount failed, trying with nfs4..."
-              # Fallback to nfs4 mount
-              mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport $EFS_ID.efs.${AWS::Region}.amazonaws.com:/ /home/${FTPUser}/ftp
+              echo "ERROR: EFS mount failed"
+              # Try again after a short wait
+              sleep 10
+              mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport $EFS_DNS:/ /home/${FTPUser}/ftp
           fi
 
           # Create upload subdirectory on EFS

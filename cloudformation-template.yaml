@@ -669,8 +669,8 @@ Resources:
                   original_filename=$(basename "$file")
                   original_dir=$(dirname "$file")
 
-                  # Get relative path from FTP_DIR
-                  relative_path="${file#$FTP_DIR/}"
+                  # Get relative path from FTP_DIR (using sed to avoid bash # syntax)
+                  relative_path=$(echo "$file" | sed "s|^$FTP_DIR/||")
                   relative_dir=$(dirname "$relative_path")
 
                   # Get file modification date (YYYY-MM-DD)

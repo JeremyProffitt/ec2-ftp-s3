@@ -29,22 +29,48 @@ User --> FTP (Port 29720) --> EC2 Instance --> S3 Bucket (incoming/)
 
 ## GitHub Configuration
 
+Configure these in your GitHub repository: **Settings > Secrets and variables > Actions**
+
 ### Required Secrets
 
-Set these in your GitHub repository settings (Settings > Secrets and variables > Actions):
-
-- `AWS_ACCESS_KEY_ID` - AWS access key with permissions to create EC2, VPC, IAM, CloudFormation
-- `AWS_SECRET_ACCESS_KEY` - AWS secret access key
-- `FTP_PASSWORD` - Password for the FTP user
+| Secret | Description | Example |
+|--------|-------------|---------|
+| `AWS_ACCESS_KEY_ID` | AWS access key with permissions to create EC2, VPC, IAM, S3, CloudFormation, CloudWatch | `AKIAIOSFODNN7EXAMPLE` |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret access key corresponding to the access key ID | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` |
+| `FTP_PASSWORD` | Password for the FTP user (minimum 8 characters recommended) | `MySecureP@ssw0rd!` |
 
 ### Required Variables
 
-Set these in your GitHub repository settings (Settings > Secrets and variables > Actions > Variables):
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `FTP_USER` | Username for FTP access (will be created on the EC2 instance) | `ftpuser` |
+| `S3_BUCKET` | S3 bucket name where uploaded files will be stored (must already exist) | `my-ftp-uploads` |
+| `INSTANCE_TYPE` | EC2 instance type | `t4g.micro` |
+| `CLOUDFORMATION_S3_BUCKET` | S3 bucket for storing the CloudFormation template (must already exist) | `my-cloudformation-templates` |
 
-- `FTP_USER` - Username for FTP access
-- `S3_BUCKET` - S3 bucket name where files will be uploaded
-- `INSTANCE_TYPE` - EC2 instance type (e.g., t3.micro, t3.small)
-- `CLOUDFORMATION_S3_BUCKET` - S3 bucket for CloudFormation template storage
+### Optional Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DOMAIN_NAME` | Custom domain name for Route53 DNS record (requires `HOSTED_ZONE_ID`) | `ftp.example.com` |
+| `HOSTED_ZONE_ID` | Route53 Hosted Zone ID for DNS record management | `Z1234567890ABC` |
+
+### Setting Up Secrets and Variables
+
+1. Go to your GitHub repository
+2. Click **Settings** > **Secrets and variables** > **Actions**
+3. For secrets: Click **New repository secret**, enter the name and value
+4. For variables: Click the **Variables** tab, then **New repository variable**
+
+### AWS IAM Permissions
+
+The AWS credentials need the following permissions:
+- `ec2:*` - EC2 instance and VPC management
+- `iam:*` - IAM role creation for EC2
+- `s3:*` - S3 bucket access for file uploads and CloudFormation templates
+- `cloudformation:*` - Stack deployment
+- `logs:*` - CloudWatch Logs
+- `route53:*` - DNS management (only if using DOMAIN_NAME)
 
 ## Files
 
@@ -207,11 +233,19 @@ aws cloudformation wait stack-delete-complete --stack-name ftp-server-stack
 ## Cost Estimation
 
 Approximate monthly costs (us-east-1):
-- EC2 t3.micro: ~$7.50
-- EBS 10GB gp3: ~$0.80
-- CloudWatch Logs (5GB): ~$2.50
-- Data Transfer: Variable
-- **Total: ~$11/month** (excluding data transfer)
+
+| Resource | Monthly Cost | Notes |
+|----------|-------------|-------|
+| EC2 t3.micro | ~$7.50 | Free tier: 750 hrs/month for 12 months |
+| EBS 10GB gp3 | ~$0.80 | Free tier: 30GB for 12 months |
+| CloudWatch Logs (5GB) | ~$2.50 | Free tier: 5GB ingestion/month |
+| Route53 Hosted Zone | ~$0.50 | Per hosted zone (if using custom domain) |
+| Route53 Queries | ~$0.40 | Per million queries (if using custom domain) |
+| Data Transfer | Variable | First 100GB/month free |
+
+**With AWS Free Tier (first 12 months):** ~$0-1/month (only Route53 if using custom domain)
+
+**After Free Tier expires:** ~$12/month (excluding data transfer)
 
 ## License
 

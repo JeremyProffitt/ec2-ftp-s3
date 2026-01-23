@@ -36,15 +36,15 @@ Parameters:
     Description: Route53 Hosted Zone ID (required if DomainName is provided)
     Default: ''
 
-  AlertEmail:
+  SNSTopicArn:
     Type: String
-    Description: Email address for CloudWatch alarm notifications
+    Description: SNS Topic ARN for CloudWatch alarm notifications (pre-created, static)
     Default: ''
 
 Conditions:
   HasKeyName: !Not [!Equals [!Ref KeyName, '']]
   HasDomainName: !Not [!Equals [!Ref DomainName, '']]
-  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  HasSNSTopic: !Not [!Equals [!Ref SNSTopicArn, '']]
 
 Resources:
   # VPC Configuration
@@ -226,27 +226,10 @@ Resources:
       LogGroupName: /aws/ec2/ftp-server
       RetentionInDays: 7
 
-  # SNS Topic for EFS Alerts
-  EFSAlertTopic:
-    Type: AWS::SNS::Topic
-    Condition: HasAlertEmail
-    Properties:
-      TopicName: FTP-EFS-Storage-Alerts
-      DisplayName: FTP EFS Storage Alerts
-
-  # SNS Email Subscription
-  EFSAlertSubscription:
-    Type: AWS::SNS::Subscription
-    Condition: HasAlertEmail
-    Properties:
-      TopicArn: !Ref EFSAlertTopic
-      Protocol: email
-      Endpoint: !Ref AlertEmail
-
   # CloudWatch Alarm for EFS Storage > 10GB for 1 day
   EFSStorageAlarm:
     Type: AWS::CloudWatch::Alarm
-    Condition: HasAlertEmail
+    Condition: HasSNSTopic
     Properties:
       AlarmName: FTP-EFS-Storage-High
       AlarmDescription: EFS storage usage exceeds 10GB for more than 24 hours
@@ -263,10 +246,32 @@ Resources:
         - Name: StorageClass
           Value: Total
       AlarmActions:
-        - !Ref EFSAlertTopic
+        - !Ref SNSTopicArn
       OKActions:
-        - !Ref EFSAlertTopic
+        - !Ref SNSTopicArn
       TreatMissingData: notBreaching
+
+  # CloudWatch Alarm for EC2 Instance Health
+  EC2HealthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasSNSTopic
+    Properties:
+      AlarmName: FTP-EC2-Health-Check
+      AlarmDescription: EC2 instance health check failed
+      MetricName: StatusCheckFailed
+      Namespace: AWS/EC2
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref FTPServer
+      AlarmActions:
+        - !Ref SNSTopicArn
+      OKActions:
+        - !Ref SNSTopicArn
 
   # EC2 Instance
   FTPServer:

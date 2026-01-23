@@ -66,7 +66,7 @@ jobs:
               FTPPassword=${{ secrets.FTP_PASSWORD }} \
               DomainName=${{ vars.DOMAIN_NAME }} \
               HostedZoneId=${{ vars.HOSTED_ZONE_ID }} \
-              AlertEmail=${{ vars.ALERT_EMAIL }} \
+              SNSTopicArn=${{ vars.SNS_TOPIC_ARN }} \
             --capabilities CAPABILITY_IAM \
             --no-fail-on-empty-changeset
 
@@ -265,7 +265,7 @@ jobs:
           echo "FTP Port: 29720"
           echo "FTP User: ${{ vars.FTP_USER }}"
           echo "S3 Bucket: ${{ vars.S3_BUCKET }}"
-          echo "Alert Email: ${{ vars.ALERT_EMAIL }}"
+          echo "SNS Topic: ${{ vars.SNS_TOPIC_ARN }}"
           echo "CloudWatch Log Group: /aws/ec2/ftp-server"
           echo "========================================="
           echo ""

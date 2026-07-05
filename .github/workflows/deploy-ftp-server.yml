@@ -14,6 +14,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - name: Checkout code
@@ -22,8 +25,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: gha-${{ github.event.repository.name }}-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Upload CloudFormation template to S3

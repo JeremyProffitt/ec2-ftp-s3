@@ -38,7 +38,8 @@ Parameters:
 
   SNSTopicArn:
     Type: String
-    Description: SNS Topic ARN for CloudWatch alarm notifications (pre-created, static)
+    Description: SNS Topic ARN for CloudWatch alarm notifications (pre-created, 
+      static)
     Default: ''
 
 Conditions:
@@ -55,15 +56,15 @@ Resources:
       EnableDnsHostnames: true
       EnableDnsSupport: true
       Tags:
-        - Key: Name
-          Value: FTP-Server-VPC
+      - Key: Name
+        Value: FTP-Server-VPC
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
-        - Key: Name
-          Value: FTP-Server-IGW
+      - Key: Name
+        Value: FTP-Server-IGW
 
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -79,16 +80,16 @@ Resources:
       MapPublicIpOnLaunch: true
       AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
-        - Key: Name
-          Value: FTP-Server-PublicSubnet
+      - Key: Name
+        Value: FTP-Server-PublicSubnet
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
       Tags:
-        - Key: Name
-          Value: FTP-Server-PublicRouteTable
+      - Key: Name
+        Value: FTP-Server-PublicRouteTable
 
   PublicRoute:
     Type: AWS::EC2::Route
@@ -111,23 +112,23 @@ Resources:
       GroupDescription: Security group for FTP server - only port 29720
       VpcId: !Ref VPC
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 29720
-          ToPort: 29720
-          CidrIp: 0.0.0.0/0
-          Description: FTP Control Port
+      - IpProtocol: tcp
+        FromPort: 29720
+        ToPort: 29720
+        CidrIp: 0.0.0.0/0
+        Description: FTP Control Port
         # Passive FTP ports
-        - IpProtocol: tcp
-          FromPort: 21000
-          ToPort: 21100
-          CidrIp: 0.0.0.0/0
-          Description: FTP Passive Ports
+      - IpProtocol: tcp
+        FromPort: 21000
+        ToPort: 21100
+        CidrIp: 0.0.0.0/0
+        Description: FTP Passive Ports
       SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
+      - IpProtocol: -1
+        CidrIp: 0.0.0.0/0
       Tags:
-        - Key: Name
-          Value: FTP-Server-SG
+      - Key: Name
+        Value: FTP-Server-SG
 
   # EFS Security Group - allows NFS traffic from EC2
   EFSSecurityGroup:
@@ -136,14 +137,14 @@ Resources:
       GroupDescription: Security group for EFS - allows NFS from FTP server
       VpcId: !Ref VPC
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 2049
-          ToPort: 2049
-          SourceSecurityGroupId: !Ref FTPSecurityGroup
-          Description: NFS from FTP Server
+      - IpProtocol: tcp
+        FromPort: 2049
+        ToPort: 2049
+        SourceSecurityGroupId: !Ref FTPSecurityGroup
+        Description: NFS from FTP Server
       Tags:
-        - Key: Name
-          Value: FTP-EFS-SG
+      - Key: Name
+        Value: FTP-EFS-SG
 
   # EFS FileSystem for FTP staging
   FTPFileSystem:
@@ -153,8 +154,8 @@ Resources:
       ThroughputMode: bursting
       Encrypted: true
       FileSystemTags:
-        - Key: Name
-          Value: FTP-Staging-EFS
+      - Key: Name
+        Value: FTP-Staging-EFS
 
   # EFS Mount Target in Public Subnet
   EFSMountTarget:
@@ -163,7 +164,7 @@ Resources:
       FileSystemId: !Ref FTPFileSystem
       SubnetId: !Ref PublicSubnet
       SecurityGroups:
-        - !Ref EFSSecurityGroup
+      - !Ref EFSSecurityGroup
 
   # IAM Role for EC2
   EC2Role:
@@ -172,52 +173,52 @@ Resources:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
       Policies:
-        - PolicyName: S3Access
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                  - s3:ListBucket
-                Resource:
-                  - !Sub 'arn:aws:s3:::${S3BucketName}'
-                  - !Sub 'arn:aws:s3:::${S3BucketName}/*'
-        - PolicyName: CloudWatchLogs
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                  - logs:DescribeLogStreams
-                Resource: '*'
-        - PolicyName: Route53Access
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - route53:ListResourceRecordSets
-                  - route53:ChangeResourceRecordSets
-                  - route53:GetChange
-                Resource: '*'
+      - PolicyName: S3Access
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:ListBucket
+            Resource:
+            - !Sub 'arn:aws:s3:::${S3BucketName}'
+            - !Sub 'arn:aws:s3:::${S3BucketName}/*'
+      - PolicyName: CloudWatchLogs
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - logs:DescribeLogStreams
+            Resource: '*'
+      - PolicyName: Route53Access
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - route53:ListResourceRecordSets
+            - route53:ChangeResourceRecordSets
+            - route53:GetChange
+            Resource: '*'
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Roles:
-        - !Ref EC2Role
+      - !Ref EC2Role
 
   # CloudWatch Log Group
   FTPLogGroup:
@@ -227,53 +228,6 @@ Resources:
       RetentionInDays: 7
 
   # CloudWatch Alarm for EFS Storage > 10GB for 1 day
-  EFSStorageAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Condition: HasSNSTopic
-    Properties:
-      AlarmName: FTP-EFS-Storage-High
-      AlarmDescription: EFS storage usage exceeds 10GB for more than 24 hours
-      MetricName: StorageBytes
-      Namespace: AWS/EFS
-      Statistic: Average
-      Period: 3600
-      EvaluationPeriods: 24
-      Threshold: 10737418240
-      ComparisonOperator: GreaterThanThreshold
-      Dimensions:
-        - Name: FileSystemId
-          Value: !Ref FTPFileSystem
-        - Name: StorageClass
-          Value: Total
-      AlarmActions:
-        - !Ref SNSTopicArn
-      OKActions:
-        - !Ref SNSTopicArn
-      TreatMissingData: notBreaching
-
-  # CloudWatch Alarm for EC2 Instance Health
-  EC2HealthAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Condition: HasSNSTopic
-    Properties:
-      AlarmName: FTP-EC2-Health-Check
-      AlarmDescription: EC2 instance health check failed
-      MetricName: StatusCheckFailed
-      Namespace: AWS/EC2
-      Statistic: Maximum
-      Period: 60
-      EvaluationPeriods: 3
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      Dimensions:
-        - Name: InstanceId
-          Value: !Ref FTPServer
-      AlarmActions:
-        - !Ref SNSTopicArn
-      OKActions:
-        - !Ref SNSTopicArn
-
-  # EC2 Instance
   FTPServer:
     Type: AWS::EC2::Instance
     DependsOn: EFSMountTarget
@@ -283,17 +237,17 @@ Resources:
       KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
       IamInstanceProfile: !Ref EC2InstanceProfile
       NetworkInterfaces:
-        - AssociatePublicIpAddress: true
-          DeviceIndex: 0
-          GroupSet:
-            - !Ref FTPSecurityGroup
-          SubnetId: !Ref PublicSubnet
+      - AssociatePublicIpAddress: true
+        DeviceIndex: 0
+        GroupSet:
+        - !Ref FTPSecurityGroup
+        SubnetId: !Ref PublicSubnet
       BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeType: gp3
-            VolumeSize: 10
-            DeleteOnTermination: true
+      - DeviceName: /dev/sda1
+        Ebs:
+          VolumeType: gp3
+          VolumeSize: 10
+          DeleteOnTermination: true
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -651,8 +605,8 @@ Resources:
           echo "UserData completed"
 
       Tags:
-        - Key: Name
-          Value: FTP-Server
+      - Key: Name
+        Value: FTP-Server
 
 Outputs:
   InstanceId:
